@@ -32,16 +32,15 @@ Metric ingestion and dashboard access are separate flows. The plugin sends metri
 ## What It Tracks
 
 - Input, output, reasoning, and cache token volumes.
-- Usage by provider and model.
-- Completed assistant messages and sessions.
-- Response duration and session errors.
-- Cost as reported by OpenCode, without assuming or converting a currency.
+- Usage by team, user, agent mode, provider, model, and session.
+- Completed assistant messages, sessions, and model/tool/session errors.
+- Response latency percentiles and cost in USD as reported by OpenCode.
 
-Metrics are aggregated to show trends and comparisons. The project is not intended to retain conversations or inspect session content.
+Metrics aggregate usage to show trends and comparisons. The project does not retain conversations or inspect session content.
 
 ## Privacy and Scope
 
-The plugin does not send prompts, responses, project names, file paths, or session identifiers. Installations are distinguished using stable labels, such as the user and source configured for each device.
+The plugin does not send prompts, responses, project names, or file paths. It sends raw OpenCode session IDs as metric labels to support the supplied dashboard's per-session analysis. Session IDs and model/provider usage can reveal activity patterns and create high-cardinality time series; keep Grafana access protected and choose an appropriate VictoriaMetrics retention period. `team_name` and `user_name` are configured metric labels, while `agent` is taken from the OpenCode message mode. `source` is only included in the plugin startup log, not on each metric series.
 
 The initial setup is for the personal computer only. It does not install anything on or change the configuration of the work computer. It also does not monitor general computer activity such as CPU, memory, or other applications; it focuses on OpenCode usage.
 
@@ -56,6 +55,8 @@ Model and provider names, together with usage volumes, can reveal sensitive info
 - **Nginx Proxy Manager:** provides HTTPS access to the metrics receiver and, optionally, a separate route to Grafana.
 
 The metrics pipeline uses OpenTelemetry and Prometheus-compatible formats to keep the plugin independent from the storage backend. The initial deployment is a single node, which is suitable for starting on a home NAS but does not provide high availability. NAS resilience depends on backups, not on container redundancy.
+
+The provisioned dashboard uses the metric families `opencode_token_usage_tokens_total`, `opencode_request_count_total`, `opencode_session_count_total`, `opencode_response_latency_milliseconds`, `opencode_error_count_total`, and `opencode_cost_usage_USD_total`. Assistant `cost` values are sent as reported by OpenCode and are not independently recalculated or converted.
 
 The telemetry components and reverse proxy are open source. Cloudflare may remain in use as an existing DNS or proxy provider, but it is not a dependency for metric storage or analysis.
 

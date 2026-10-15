@@ -1,67 +1,276 @@
 {
   "annotations": {"list": []},
   "editable": true,
-  "graphTooltip": 0,
+  "graphTooltip": 1,
   "panels": [
     {
       "datasource": {"type": "prometheus", "uid": "victoria-metrics"},
-      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "description": "Porcentaje del contexto reutilizado desde cache: cacheRead / (input + cacheRead).",
+      "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100, "thresholds": {"mode": "absolute", "steps": [{"value": 0, "color": "red"}, {"value": 50, "color": "orange"}, {"value": 80, "color": "green"}]}}, "overrides": []},
+      "gridPos": {"h": 7, "w": 6, "x": 0, "y": 0},
       "id": 1,
-      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}},
-      "targets": [{"expr": "sum by (token_type) (rate(opencode_tokens_total[$__rate_interval]))", "legendFormat": "{{token_type}}", "refId": "A"}],
-      "title": "Token rate by type",
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"], "values": false}, "showThresholdLabels": false, "showThresholdMarkers": true},
+      "targets": [{"expr": "100 * sum(increase(opencode_token_usage_tokens_total{team_name=~\"$team_name\", user_name=~\"$user_name\", agent=~\"$agent\", model=~\"$model\", provider=~\"$provider\", type=\"cacheRead\", session_id=~\"$session_id\"}[$__range])) / clamp_min(sum(increase(opencode_token_usage_tokens_total{team_name=~\"$team_name\", user_name=~\"$user_name\", agent=~\"$agent\", model=~\"$model\", provider=~\"$provider\", type=~\"input|cacheRead\", session_id=~\"$session_id\"}[$__range])), 1)", "instant": true, "refId": "A"}],
+      "title": "Cache hit ratio",
+      "type": "gauge"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "victoria-metrics"},
+      "description": "Tokens de salida / (tokens de entrada + salida). No incluye tokens cacheados.",
+      "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100, "thresholds": {"mode": "absolute", "steps": [{"value": 0, "color": "red"}, {"value": 30, "color": "orange"}, {"value": 40, "color": "green"}, {"value": 56, "color": "orange"}, {"value": 60, "color": "red"}]}}, "overrides": []},
+      "gridPos": {"h": 7, "w": 6, "x": 6, "y": 0},
+      "id": 2,
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"], "values": false}, "showThresholdLabels": false, "showThresholdMarkers": true},
+      "targets": [{"expr": "100 * sum(increase(opencode_token_usage_tokens_total{team_name=~\"$team_name\", user_name=~\"$user_name\", agent=~\"$agent\", model=~\"$model\", provider=~\"$provider\", type=\"output\", session_id=~\"$session_id\"}[$__range])) / clamp_min(sum(increase(opencode_token_usage_tokens_total{team_name=~\"$team_name\", user_name=~\"$user_name\", agent=~\"$agent\", model=~\"$model\", provider=~\"$provider\", type=~\"input|output\", session_id=~\"$session_id\"}[$__range])), 1)", "instant": true, "refId": "A"}],
+      "title": "Output ratio",
+      "type": "gauge"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "victoria-metrics"},
+      "description": "Respuestas completas por sesion en el rango seleccionado.",
+      "fieldConfig": {"defaults": {"unit": "short", "decimals": 1}, "overrides": []},
+      "gridPos": {"h": 7, "w": 4, "x": 12, "y": 0},
+      "id": 3,
+      "options": {"colorMode": "value", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"], "values": false}},
+      "targets": [{"expr": "sum(increase(opencode_request_count_total{team_name=~\"$team_name\", user_name=~\"$user_name\", agent=~\"$agent\", model=~\"$model\", provider=~\"$provider\", session_id=~\"$session_id\"}[$__range])) / clamp_min(count(count by (session_id) (count_over_time(opencode_request_count_total{team_name=~\"$team_name\", user_name=~\"$user_name\", agent=~\"$agent\", model=~\"$model\", provider=~\"$provider\", session_id=~\"$session_id\"}[$__range]))), 1)", "instant": true, "refId": "A"}],
+      "title": "Interactions per session",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "victoria-metrics"},
+      "description": "Modelos que han registrado consumo en el rango seleccionado.",
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 7, "w": 4, "x": 16, "y": 0},
+      "id": 4,
+      "options": {"colorMode": "value", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"], "values": false}},
+      "targets": [{"expr": "count(count by (model) (increase(opencode_token_usage_tokens_total{team_name=~\"$team_name\", user_name=~\"$user_name\", agent=~\"$agent\", model=~\"$model\", provider=~\"$provider\", type=~\"$token_type\", session_id=~\"$session_id\"}[$__range]) > 0))", "instant": true, "refId": "A"}],
+      "title": "Models used",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "victoria-metrics"},
+      "description": "Tokens contabilizados en el rango seleccionado.",
+      "fieldConfig": {"defaults": {"unit": "short", "decimals": 0}, "overrides": []},
+      "gridPos": {"h": 7, "w": 4, "x": 20, "y": 0},
+      "id": 5,
+      "options": {"colorMode": "background", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"], "values": false}},
+      "targets": [{"expr": "sum(increase(opencode_token_usage_tokens_total{team_name=~\"$team_name\", user_name=~\"$user_name\", agent=~\"$agent\", model=~\"$model\", provider=~\"$provider\", type=~\"$token_type\", session_id=~\"$session_id\"}[$__range]))", "instant": true, "refId": "A"}],
+      "title": "Total tokens",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "victoria-metrics"},
+      "description": "Participacion por modelo en el consumo total de tokens.",
+      "fieldConfig": {"defaults": {"unit": "short", "custom": {"hideFrom": {"legend": false, "tooltip": false, "viz": false}}}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 7},
+      "id": 6,
+      "options": {"displayLabels": ["name", "percent"], "legend": {"displayMode": "table", "placement": "right", "showLegend": true, "values": ["value", "percent"]}, "pieType": "donut", "reduceOptions": {"calcs": ["lastNotNull"], "values": false}},
+      "targets": [{"expr": "sum by (model) (increase(opencode_token_usage_tokens_total{team_name=~\"$team_name\", user_name=~\"$user_name\", agent=~\"$agent\", model=~\"$model\", provider=~\"$provider\", type=~\"$token_type\", session_id=~\"$session_id\"}[$__range]))", "instant": true, "legendFormat": "{{model}}", "refId": "A"}],
+      "title": "Token consumption by model",
+      "type": "piechart"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "victoria-metrics"},
+      "description": "Distribucion del consumo entre input, output, reasoning y cache.",
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 7},
+      "id": 7,
+      "options": {"displayLabels": ["name", "percent"], "legend": {"displayMode": "table", "placement": "right", "showLegend": true, "values": ["value", "percent"]}, "pieType": "donut", "reduceOptions": {"calcs": ["lastNotNull"], "values": false}},
+      "targets": [{"expr": "sum by (type) (increase(opencode_token_usage_tokens_total{team_name=~\"$team_name\", user_name=~\"$user_name\", agent=~\"$agent\", model=~\"$model\", provider=~\"$provider\", type=~\"$token_type\", session_id=~\"$session_id\"}[$__range]))", "instant": true, "legendFormat": "{{type}}", "refId": "A"}],
+      "title": "Token distribution by type",
+      "type": "piechart"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "victoria-metrics"},
+      "description": "Tokens consumidos por intervalo. Los filtros permiten comparar modelos y tipos de token.",
+      "fieldConfig": {"defaults": {"unit": "short", "custom": {"drawStyle": "line", "lineWidth": 2, "fillOpacity": 8}}, "overrides": []},
+      "gridPos": {"h": 9, "w": 24, "x": 0, "y": 15},
+      "id": 8,
+      "options": {"legend": {"displayMode": "table", "placement": "bottom", "showLegend": true, "calcs": ["sum"]}, "tooltip": {"mode": "multi"}},
+      "targets": [{"expr": "sum by (model, type) (increase(opencode_token_usage_tokens_total{team_name=~\"$team_name\", user_name=~\"$user_name\", agent=~\"$agent\", model=~\"$model\", provider=~\"$provider\", type=~\"$token_type\", session_id=~\"$session_id\"}[$__interval]))", "legendFormat": "{{model}} / {{type}}", "refId": "A"}],
+      "title": "Token consumption over time",
       "type": "timeseries"
     },
     {
       "datasource": {"type": "prometheus", "uid": "victoria-metrics"},
+      "description": "Numero de respuestas completas por agente (modo) y modelo.",
+      "fieldConfig": {"defaults": {"unit": "short", "custom": {"axisPlacement": "auto"}}, "overrides": []},
+      "gridPos": {"h": 9, "w": 12, "x": 0, "y": 24},
+      "id": 9,
+      "options": {"orientation": "vertical", "stacking": "normal", "showValue": "auto", "legend": {"displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi"}},
+      "targets": [{"expr": "sum by (agent, model) (increase(opencode_request_count_total{team_name=~\"$team_name\", user_name=~\"$user_name\", agent=~\"$agent\", model=~\"$model\", provider=~\"$provider\", session_id=~\"$session_id\"}[$__range]))", "instant": true, "legendFormat": "{{agent}} / {{model}}", "refId": "A"}],
+      "title": "Agent mode by model",
+      "type": "barchart"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "victoria-metrics"},
+      "description": "Tokens medios por respuesta de asistente, por modelo.",
       "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
-      "id": 2,
-      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}},
-      "targets": [{"expr": "sum by (model) (increase(opencode_tokens_total{token_type=~\"input|output\"}[$__range]))", "legendFormat": "{{model}}", "refId": "A"}],
-      "title": "Input and output tokens by model",
+      "gridPos": {"h": 9, "w": 12, "x": 12, "y": 24},
+      "id": 10,
+      "options": {"orientation": "horizontal", "showValue": "auto", "legend": {"showLegend": false}},
+      "targets": [{"expr": "sum by (model) (increase(opencode_token_usage_tokens_total{team_name=~\"$team_name\", user_name=~\"$user_name\", agent=~\"$agent\", model=~\"$model\", provider=~\"$provider\", type=~\"$token_type\", session_id=~\"$session_id\"}[$__range])) / clamp_min(sum by (model) (increase(opencode_request_count_total{team_name=~\"$team_name\", user_name=~\"$user_name\", agent=~\"$agent\", model=~\"$model\", provider=~\"$provider\", session_id=~\"$session_id\"}[$__range])), 1)", "instant": true, "legendFormat": "{{model}}", "refId": "A"}],
+      "title": "Tokens per response by model",
+      "type": "barchart"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "victoria-metrics"},
+      "description": "Percentiles de latencia calculados con histogramas de buckets explicitos hasta 10 s.",
+      "fieldConfig": {"defaults": {"unit": "ms", "min": 0, "custom": {"drawStyle": "line", "lineWidth": 2}}, "overrides": []},
+      "gridPos": {"h": 9, "w": 24, "x": 0, "y": 33},
+      "id": 11,
+      "options": {"legend": {"displayMode": "table", "placement": "right", "showLegend": true, "calcs": ["mean", "max"]}, "tooltip": {"mode": "multi"}},
+      "targets": [
+        {"expr": "histogram_quantile(0.5, sum by (le, model) (rate(opencode_response_latency_milliseconds_bucket{team_name=~\"$team_name\", user_name=~\"$user_name\", agent=~\"$agent\", model=~\"$model\", provider=~\"$provider\"}[$__rate_interval])))", "legendFormat": "{{model}} p50", "refId": "A"},
+        {"expr": "histogram_quantile(0.9, sum by (le, model) (rate(opencode_response_latency_milliseconds_bucket{team_name=~\"$team_name\", user_name=~\"$user_name\", agent=~\"$agent\", model=~\"$model\", provider=~\"$provider\"}[$__rate_interval])))", "legendFormat": "{{model}} p90", "refId": "B"}
+      ],
+      "title": "Response latency p50 / p90 by model",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "victoria-metrics"},
+      "description": "Eventos de error model, tool y session por cada 100 respuestas completas. Un mismo incidente puede generar varios eventos y el valor puede superar 100.",
+      "fieldConfig": {"defaults": {"unit": "short", "decimals": 2, "thresholds": {"mode": "absolute", "steps": [{"value": 0, "color": "green"}, {"value": 2, "color": "orange"}, {"value": 5, "color": "red"}]}}, "overrides": []},
+      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 42},
+      "id": 12,
+      "options": {"colorMode": "value", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"], "values": false}},
+      "targets": [{"expr": "100 * sum(increase(opencode_error_count_total{team_name=~\"$team_name\", user_name=~\"$user_name\", agent=~\"$agent\", model=~\"$model\", provider=~\"$provider\", session_id=~\"$session_id\"}[$__range])) / clamp_min(sum(increase(opencode_request_count_total{team_name=~\"$team_name\", user_name=~\"$user_name\", agent=~\"$agent\", model=~\"$model\", provider=~\"$provider\", session_id=~\"$session_id\"}[$__range])), 1)", "instant": true, "refId": "A"}],
+      "title": "Error events per 100 completions",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "victoria-metrics"},
+      "description": "Error events categorized as model, tool, or session. Error messages and tool output are never used as labels.",
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 6, "w": 16, "x": 8, "y": 42},
+      "id": 13,
+      "options": {"orientation": "horizontal", "showValue": "auto", "legend": {"showLegend": false}},
+      "targets": [{"expr": "sum by (type) (increase(opencode_error_count_total{team_name=~\"$team_name\", user_name=~\"$user_name\", agent=~\"$agent\", model=~\"$model\", provider=~\"$provider\", session_id=~\"$session_id\"}[$__range]))", "instant": true, "legendFormat": "{{type}}", "refId": "A"}],
+      "title": "Errors by type",
+      "type": "barchart"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "victoria-metrics"},
+      "description": "Interacciones por sesion en el rango. session_id es un label de alta cardinalidad y permite identificar actividad por sesion.",
+      "fieldConfig": {"defaults": {"unit": "short", "custom": {"align": "auto"}}, "overrides": []},
+      "gridPos": {"h": 9, "w": 24, "x": 0, "y": 48},
+      "id": 14,
+      "options": {"showHeader": true, "cellHeight": "sm", "sortBy": [{"desc": true, "displayName": "Interactions"}]},
+      "targets": [{"expr": "sum by (session_id, user_name, agent, model) (increase(opencode_request_count_total{team_name=~\"$team_name\", user_name=~\"$user_name\", agent=~\"$agent\", model=~\"$model\", provider=~\"$provider\", session_id=~\"$session_id\"}[$__range]))", "format": "table", "instant": true, "refId": "A"}],
+      "title": "Session interactions",
+      "type": "table"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "victoria-metrics"},
+      "description": "Costes estimados en USD segun el valor de cost informado por OpenCode.",
+      "fieldConfig": {"defaults": {"unit": "currencyUSD", "decimals": 2}, "overrides": []},
+      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 57},
+      "id": 15,
+      "options": {"colorMode": "value", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"], "values": false}},
+      "targets": [{"expr": "sum(increase(opencode_cost_usage_USD_total{team_name=~\"$team_name\", user_name=~\"$user_name\", agent=~\"$agent\", model=~\"$model\", provider=~\"$provider\", session_id=~\"$session_id\"}[$__range]))", "instant": true, "refId": "A"}],
+      "title": "Total cost",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "victoria-metrics"},
+      "fieldConfig": {"defaults": {"unit": "currencyUSD", "decimals": 4}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 57},
+      "id": 16,
+      "options": {"orientation": "horizontal", "showValue": "auto", "legend": {"showLegend": false}},
+      "targets": [{"expr": "sum by (model) (increase(opencode_cost_usage_USD_total{team_name=~\"$team_name\", user_name=~\"$user_name\", agent=~\"$agent\", model=~\"$model\", provider=~\"$provider\", session_id=~\"$session_id\"}[$__range]))", "format": "table", "instant": true, "legendFormat": "{{model}}", "refId": "A"}],
+      "title": "Cost by model",
+      "type": "barchart"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "victoria-metrics"},
+      "fieldConfig": {"defaults": {"unit": "currencyUSD", "decimals": 4}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 57},
+      "id": 17,
+      "options": {"orientation": "horizontal", "showValue": "auto", "legend": {"showLegend": false}},
+      "targets": [{"expr": "sum by (user_name) (increase(opencode_cost_usage_USD_total{team_name=~\"$team_name\", user_name=~\"$user_name\", agent=~\"$agent\", model=~\"$model\", provider=~\"$provider\", session_id=~\"$session_id\"}[$__range]))", "format": "table", "instant": true, "legendFormat": "{{user_name}}", "refId": "A"}],
+      "title": "Cost by user",
+      "type": "barchart"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "victoria-metrics"},
+      "fieldConfig": {"defaults": {"unit": "currencyUSD", "decimals": 4, "custom": {"drawStyle": "line", "lineWidth": 2, "fillOpacity": 8}}, "overrides": []},
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 65},
+      "id": 18,
+      "options": {"legend": {"displayMode": "table", "placement": "bottom", "showLegend": true, "calcs": ["sum"]}, "tooltip": {"mode": "multi"}},
+      "targets": [{"expr": "sum by (model) (increase(opencode_cost_usage_USD_total{team_name=~\"$team_name\", user_name=~\"$user_name\", agent=~\"$agent\", model=~\"$model\", provider=~\"$provider\", session_id=~\"$session_id\"}[$__interval]))", "legendFormat": "{{model}}", "refId": "A"}],
+      "title": "Cost over time by model",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "victoria-metrics"},
+      "fieldConfig": {"defaults": {"unit": "currencyUSD", "decimals": 4}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 73},
+      "id": 19,
+      "options": {"orientation": "horizontal", "showValue": "auto", "legend": {"showLegend": false}},
+      "targets": [{"expr": "sum by (team_name) (increase(opencode_cost_usage_USD_total{team_name=~\"$team_name\", user_name=~\"$user_name\", agent=~\"$agent\", model=~\"$model\", provider=~\"$provider\", session_id=~\"$session_id\"}[$__range]))", "format": "table", "instant": true, "legendFormat": "{{team_name}}", "refId": "A"}],
+      "title": "Cost by team",
+      "type": "barchart"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "victoria-metrics"},
+      "fieldConfig": {"defaults": {"unit": "currencyUSD", "decimals": 4}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 73},
+      "id": 20,
+      "options": {"orientation": "horizontal", "showValue": "auto", "legend": {"showLegend": false}},
+      "targets": [{"expr": "sum by (user_name) (increase(opencode_cost_usage_USD_total{team_name=~\"$team_name\", user_name=~\"$user_name\", agent=~\"$agent\", model=~\"$model\", provider=~\"$provider\", session_id=~\"$session_id\"}[$__range])) / clamp_min(count by (user_name) (count by (user_name, session_id) (count_over_time(opencode_request_count_total{team_name=~\"$team_name\", user_name=~\"$user_name\", agent=~\"$agent\", model=~\"$model\", provider=~\"$provider\", session_id=~\"$session_id\"}[$__range]))), 1)", "format": "table", "instant": true, "legendFormat": "{{user_name}}", "refId": "A"}],
+      "title": "Average cost per session by user",
       "type": "barchart"
     },
     {
       "datasource": {"type": "prometheus", "uid": "victoria-metrics"},
       "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
-      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 8},
-      "id": 3,
-      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}},
-      "targets": [{"expr": "sum by (model) (increase(opencode_ai_requests_total[$__range]))", "legendFormat": "{{model}}", "refId": "A"}],
-      "title": "Completed assistant messages by model",
-      "type": "timeseries"
+      "gridPos": {"h": 6, "w": 12, "x": 0, "y": 81},
+      "id": 21,
+      "options": {"colorMode": "value", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"], "values": false}},
+      "targets": [{"expr": "count(count by (team_name) (increase(opencode_token_usage_tokens_total{team_name=~\"$team_name\", user_name=~\"$user_name\", agent=~\"$agent\", model=~\"$model\", provider=~\"$provider\", type=~\"$token_type\"}[7d]) > 0))", "instant": true, "refId": "A"}],
+      "title": "Active teams (7d)",
+      "type": "stat"
     },
     {
       "datasource": {"type": "prometheus", "uid": "victoria-metrics"},
+      "description": "Distinct session IDs observed during the last seven days. Session IDs are retained as labels for this view.",
       "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
-      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 8},
-      "id": 4,
-      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}},
-      "targets": [{"expr": "sum by (model) (increase(opencode_reported_cost_total[$__range]))", "legendFormat": "{{model}}", "refId": "A"}],
-      "title": "Cost reported by OpenCode (un-normalized units)",
-      "type": "timeseries"
+      "gridPos": {"h": 6, "w": 12, "x": 12, "y": 81},
+      "id": 22,
+      "options": {"colorMode": "value", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"], "values": false}},
+      "targets": [{"expr": "count(count by (session_id) (count_over_time(opencode_session_count_total{team_name=~\"$team_name\", user_name=~\"$user_name\", session_id=~\"$session_id\"}[7d])))", "instant": true, "refId": "A"}],
+      "title": "Sessions (7d)",
+      "type": "stat"
     },
     {
       "datasource": {"type": "prometheus", "uid": "victoria-metrics"},
-      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
-      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 8},
-      "id": 5,
-      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}},
-      "targets": [{"expr": "histogram_quantile(0.95, sum by (le, model) (rate(opencode_request_duration_seconds_bucket[$__rate_interval])))", "legendFormat": "{{model}}", "refId": "A"}],
-      "title": "Assistant message duration p95",
-      "type": "timeseries"
+      "description": "Completed assistant responses by team, user, and model in the selected range.",
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 9, "w": 24, "x": 0, "y": 87},
+      "id": 23,
+      "options": {"showHeader": true, "cellHeight": "sm", "sortBy": [{"desc": true, "displayName": "Requests"}]},
+      "targets": [{"expr": "sum by (user_name, team_name, model) (increase(opencode_request_count_total{team_name=~\"$team_name\", user_name=~\"$user_name\", agent=~\"$agent\", model=~\"$model\", provider=~\"$provider\", session_id=~\"$session_id\"}[$__range]))", "format": "table", "instant": true, "refId": "A"}],
+      "title": "Requests by user and model",
+      "type": "table"
     }
   ],
   "refresh": "30s",
   "schemaVersion": 39,
-  "tags": ["opencode", "usage"],
-  "templating": {"list": []},
+  "tags": ["opencode", "consumption", "models", "observability"],
+  "templating": {
+    "list": [
+      {"name": "team_name", "type": "query", "datasource": {"type": "prometheus", "uid": "victoria-metrics"}, "query": "label_values(opencode_token_usage_tokens_total, team_name)", "definition": "label_values(opencode_token_usage_tokens_total, team_name)", "refresh": 1, "multi": true, "includeAll": true, "allValue": ".*", "current": {"selected": true, "text": "All", "value": "$__all"}},
+      {"name": "user_name", "type": "query", "datasource": {"type": "prometheus", "uid": "victoria-metrics"}, "query": "label_values(opencode_token_usage_tokens_total{team_name=~\"$team_name\"}, user_name)", "definition": "label_values(opencode_token_usage_tokens_total{team_name=~\"$team_name\"}, user_name)", "refresh": 1, "multi": true, "includeAll": true, "allValue": ".*", "current": {"selected": true, "text": "All", "value": "$__all"}},
+      {"name": "agent", "type": "query", "datasource": {"type": "prometheus", "uid": "victoria-metrics"}, "query": "label_values(opencode_request_count_total{team_name=~\"$team_name\", user_name=~\"$user_name\"}, agent)", "definition": "label_values(opencode_request_count_total{team_name=~\"$team_name\", user_name=~\"$user_name\"}, agent)", "refresh": 1, "multi": true, "includeAll": true, "allValue": ".*", "current": {"selected": true, "text": "All", "value": "$__all"}},
+      {"name": "model", "type": "query", "datasource": {"type": "prometheus", "uid": "victoria-metrics"}, "query": "label_values(opencode_request_count_total{team_name=~\"$team_name\", user_name=~\"$user_name\", agent=~\"$agent\"}, model)", "definition": "label_values(opencode_request_count_total{team_name=~\"$team_name\", user_name=~\"$user_name\", agent=~\"$agent\"}, model)", "refresh": 1, "multi": true, "includeAll": true, "allValue": ".*", "current": {"selected": true, "text": "All", "value": "$__all"}},
+      {"name": "provider", "type": "query", "datasource": {"type": "prometheus", "uid": "victoria-metrics"}, "query": "label_values(opencode_request_count_total{team_name=~\"$team_name\", user_name=~\"$user_name\", agent=~\"$agent\", model=~\"$model\"}, provider)", "definition": "label_values(opencode_request_count_total{team_name=~\"$team_name\", user_name=~\"$user_name\", agent=~\"$agent\", model=~\"$model\"}, provider)", "refresh": 1, "multi": true, "includeAll": true, "allValue": ".*", "current": {"selected": true, "text": "All", "value": "$__all"}},
+      {"name": "token_type", "type": "query", "datasource": {"type": "prometheus", "uid": "victoria-metrics"}, "query": "label_values(opencode_token_usage_tokens_total, type)", "definition": "label_values(opencode_token_usage_tokens_total, type)", "refresh": 1, "multi": true, "includeAll": true, "allValue": ".*", "current": {"selected": true, "text": "All", "value": "$__all"}},
+      {"name": "session_id", "type": "query", "datasource": {"type": "prometheus", "uid": "victoria-metrics"}, "query": "label_values(opencode_request_count_total{team_name=~\"$team_name\", user_name=~\"$user_name\"}, session_id)", "definition": "label_values(opencode_request_count_total{team_name=~\"$team_name\", user_name=~\"$user_name\"}, session_id)", "refresh": 1, "multi": true, "includeAll": true, "allValue": ".*", "current": {"selected": true, "text": "All", "value": "$__all"}}
+    ]
+  },
   "time": {"from": "now-7d", "to": "now"},
-  "timepicker": {},
   "timezone": "browser",
-  "title": "OpenCode usage",
+  "title": "OpenCode model consumption",
   "uid": "opencode-usage",
-  "version": 1
+  "version": 2
 }

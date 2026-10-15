@@ -153,12 +153,15 @@ Edit `opencode-telemetry.json` with the following settings:
 {
   "endpoint": "https://metrics.example.net/v1/metrics",
   "token": "the-same-token-created-on-the-server",
+  "team_name": "personal",
   "user": "your-user-label",
   "source": "your-computer-label"
 }
 ```
 
-Use the real HTTPS metrics hostname. The endpoint path must be exactly `/v1/metrics`; `user` and `source` must be non-empty labels. Do not commit this file or share its token. Restart OpenCode after configuring the plugin. The installer supports `OPENCODE_CONFIG_DIR` and `XDG_CONFIG_HOME` if your OpenCode config directory is nonstandard.
+Use the real HTTPS metrics hostname. The endpoint path must be exactly `/v1/metrics`; `user` and `source` must be non-empty labels. `team_name` is optional and defaults to `personal`. The dashboard maps `user` to `user_name` and the assistant message mode (`plan`, `build`, or another configured mode) to `agent`. Do not commit this file or share its token. Restart OpenCode after configuring the plugin. The installer and plugin support `OPENCODE_CONFIG_DIR` and `XDG_CONFIG_HOME` if your OpenCode config directory is nonstandard.
+
+The dashboard includes per-session views, so the plugin sends raw `session_id` values as metric labels on request, token, cost, session, and error metrics. This enables session filtering but increases time-series cardinality and exposes activity-level identifiers to anyone with metrics or Grafana access. The plugin bounds its in-process attribute and deduplication caches at 10,000 entries per metric stream; higher session volumes can exceed its cardinality limit. Keep Grafana protected and review VictoriaMetrics retention and resource limits for your usage volume. The cost panel displays the `cost` value reported by OpenCode as USD; no independent currency conversion is performed.
 
 ## 6. Verify Ingestion
 
