@@ -13,31 +13,31 @@ Do not expose VictoriaMetrics or the Collector's storage network directly to the
 
 ## 1. Get the Deployment Bundle
 
-For a tagged GitHub release, download `opencode-telemetry-deploy.tar.gz` and its `.sha256` file from the release's Assets. Transfer them to the server, then verify and extract the archive:
+For a tagged GitHub release, download `opencode-telemetry-deploy.tar.gz` and its `.sha256` file from the same release's Assets. Transfer both files to the server without opening, extracting, or recompressing the archive. The commands below use `/volume1/docker/observability` as a generic persistent deployment directory; use a suitable persistent path on other NAS systems.
 
 ```sh
 sha256sum -c opencode-telemetry-deploy.tar.gz.sha256
-mkdir -p opencode-telemetry
-tar -xzf opencode-telemetry-deploy.tar.gz -C opencode-telemetry
-cd opencode-telemetry
+mkdir -p /volume1/docker/observability
+tar -xzf opencode-telemetry-deploy.tar.gz -C /volume1/docker/observability
+cd /volume1/docker/observability
 ```
 
-On macOS, use `shasum -a 256 -c opencode-telemetry-deploy.tar.gz.sha256` to verify the checksum before transferring the files.
+On macOS, use `shasum -a 256 -c opencode-telemetry-deploy.tar.gz.sha256` to verify the checksum before transferring the files. On the server, `file opencode-telemetry-deploy.tar.gz` should report gzip-compressed data. If it reports a plain POSIX tar archive, the file may have been automatically decompressed or renamed; that plain archive will not match the checksum for the original `.tar.gz`. Re-download the original release asset and checksum together. Do not rename a plain `.tar` to `.tar.gz`, and do not deploy an archive when checksum verification fails. If you intentionally use a separately verified uncompressed tar archive, extract it with `tar -xf`; the published `.tar.gz` checksum does not validate that different file.
 
 The release workflow attaches this deployment-only archive to published GitHub Releases. To build the same archive from a development checkout instead, run `npm run package:deploy` and transfer `dist/opencode-telemetry-deploy.tar.gz` to the server. A Git clone is not required on the deployment host.
 
 ## 2. Configure the Stack
 
-Create the local environment file:
+Create the local environment file. If `.env` already exists, keep it rather than replacing it:
 
 ```sh
-cp .env.example .env
+if [ ! -e .env ]; then cp .env.example .env; fi
 ```
 
 Edit `.env` on the server:
 
 - Keep the pinned image versions unless intentionally upgrading.
-- Set `GF_SECURITY_ADMIN_PASSWORD` to a unique, strong password.
+- Set `GF_SECURITY_ADMIN_PASSWORD` to a unique, strong password; do not leave the example placeholder value.
 - Keep `GF_SECURITY_COOKIE_SECURE=true` when accessing Grafana over HTTPS.
 - Set `VM_RETENTION_PERIOD` to fit the available storage.
 - Leave `NPM_PROXY_NETWORK` as the example value unless using the NPM overlay.
@@ -50,6 +50,14 @@ chmod 600 .env
 ```
 
 The Grafana password is passed to the container as an environment variable and can be seen by users with access to Docker administration. Restrict access to the Docker daemon and this deployment directory.
+
+Grafana and the Collector run as non-root users and must be able to read their mounted configuration files. On NAS systems where extracted files are not readable by container users, grant read/traverse access to these non-secret configuration directories before starting the services:
+
+```sh
+sudo chmod -R a+rX grafana/provisioning grafana/dashboards otel
+```
+
+This command intentionally does not change permissions on `.env` or `secrets/`.
 
 Create the ingestion credential. The same token will be configured in the OpenCode plugin later:
 
@@ -64,25 +72,29 @@ The Collector image runs as UID 10001 and must be able to read this file. If you
 
 ## 3. Start the Services
 
-From the deployment directory, validate the rendered configuration, download the images, and start the stack:
+Some NAS accounts cannot access the Docker socket without administrator privileges. If Docker reports `permission denied` for `/var/run/docker.sock`, prefix Docker and Compose commands with `sudo`; do not make the Docker socket world-writable.
+
+From the deployment directory, validate the rendered configuration, download the images, and start the stack. The example uses `sudo`, which can be omitted when the current account already has Docker access:
 
 ```sh
-docker compose config
-docker compose pull
-docker compose up -d
-docker compose ps
+sudo docker compose config
+sudo docker compose pull
+sudo docker compose up -d
+sudo docker compose ps
 ```
+
+The rendered output from `docker compose config` includes values from `.env`, including the Grafana password. Do not share unredacted output.
 
 Check startup logs if a service is not running:
 
 ```sh
-docker compose logs --tail=100 otel-collector grafana victoria-metrics
+sudo docker compose logs --tail=100 otel-collector grafana victoria-metrics
 ```
 
 If `docker compose ps` shows only `3000/tcp` and `4318/tcp` with no `127.0.0.1:...->...` mappings after changing the Compose network or port settings, recreate the affected services:
 
 ```sh
-docker compose up -d --force-recreate grafana otel-collector
+sudo docker compose up -d --force-recreate grafana otel-collector
 ```
 
 The Grafana and Collector upstreams bind to `127.0.0.1:3000` and `127.0.0.1:4318`. These ports are bound to loopback, not to the NAS's LAN or public interfaces. Grafana's secure-cookie setting is enabled, so access its UI through the HTTPS reverse proxy rather than opening the HTTP upstream directly in a browser.
@@ -90,7 +102,7 @@ The Grafana and Collector upstreams bind to `127.0.0.1:3000` and `127.0.0.1:4318
 For a local-only test over `http://localhost:3000`, set `GF_SECURITY_COOKIE_SECURE=false` in `.env` and recreate Grafana. Do not use this setting for a remotely accessible deployment:
 
 ```sh
-docker compose up -d --force-recreate grafana
+sudo docker compose up -d --force-recreate grafana
 ```
 
 ## 4. Configure HTTPS Ingress
@@ -99,27 +111,33 @@ The OpenCode plugin sends metrics to an HTTPS endpoint ending in `/v1/metrics`. 
 
 ### Existing Nginx Proxy Manager
 
-Find the Docker network NPM uses (for example with `docker network ls`) and set its exact name in `.env` as `NPM_PROXY_NETWORK`. If NPM has no shared user-defined network yet, create one and attach NPM to it:
+Use a user-defined Docker bridge network shared by NPM, Grafana, and the Collector. The built-in Docker `bridge` network is not suitable for service-name DNS. If NPM does not already use a shared user-defined network, create one and attach the running NPM container (replace `nginx` with its actual container name):
 
 ```sh
-docker network create npm_proxy
+sudo docker network create npm_proxy
+sudo docker network connect npm_proxy nginx
+sudo docker restart nginx
 ```
 
-Use the same network name for `NPM_PROXY_NETWORK`, then start the stack with the optional overlay:
+If `npm_proxy` already exists, skip the create command. Set `NPM_PROXY_NETWORK=npm_proxy` in `.env`. Restarting NPM after attaching the network refreshes its Docker DNS; it briefly interrupts the proxy hosts. For a durable setup, also add this external network to the NPM Compose/project configuration so it remains attached if that container is recreated. Start the telemetry stack with the optional overlay:
 
 ```sh
-docker compose -f compose.yaml -f compose.npm.yaml config
-docker compose -f compose.yaml -f compose.npm.yaml up -d
+sudo docker compose -f compose.yaml -f compose.npm.yaml config
+sudo docker compose -f compose.yaml -f compose.npm.yaml pull
+sudo docker compose -f compose.yaml -f compose.npm.yaml up -d
+sudo docker compose -f compose.yaml -f compose.npm.yaml ps
 ```
 
-In NPM, create proxy hosts with valid TLS certificates:
+In NPM, create proxy hosts with TLS certificates whose subject alternative names cover the corresponding hostnames. Use these upstream settings:
 
-- Metrics hostname: forward to `otel-collector`, port `4318`.
-- Grafana hostname: forward to `grafana`, port `3000`.
+- Metrics hostname: scheme `http`, forward hostname `otel-collector`, port `4318`.
+- Grafana hostname: scheme `http`, forward hostname `grafana`, port `3000`; enable Websockets Support.
 
-The metrics host must pass `/v1/metrics` through unchanged and preserve the `Authorization: Bearer ...` header. Do not add public access controls that prevent the plugin from sending this header. Grafana should require authentication; do not publish it as an unauthenticated public dashboard.
+Use the Compose service names as upstream hosts, not the NAS LAN address. The host ports are bound to loopback, so forwarding NPM to `192.168.x.x:3000` or `:4318` will fail. The metrics host must pass `/v1/metrics` through unchanged and preserve the `Authorization: Bearer ...` header. Do not add public access controls that prevent the plugin from sending this header. Grafana should require authentication; do not publish it as an unauthenticated public dashboard.
 
 Only the Collector and Grafana join the NPM network. VictoriaMetrics remains on the private telemetry network.
+
+For Cloudflare or another public DNS proxy, the DNS record's origin must be the router's public IP, not the NAS's private `192.168.x.x` address. A proxied Cloudflare lookup returns Cloudflare edge addresses; that is expected and does not by itself confirm that the origin is reachable. Forward external TCP ports `443` and, if needed for certificate validation, `80` from the router to the host ports published by NPM. Find the actual host-port mappings with `sudo docker ps --format 'table {{.Names}}\t{{.Ports}}'`; NAS installations may map NPM's container ports 443/80 to non-standard host ports. Do not expose NPM's administration port publicly. Set Cloudflare SSL/TLS mode to Full (strict) when NPM presents a valid certificate for the hostname.
 
 ### Another Reverse Proxy
 
@@ -137,6 +155,8 @@ mkdir -p opencode-telemetry-plugin
 tar -xzf opencode-telemetry-plugin.tar.gz -C opencode-telemetry-plugin
 node opencode-telemetry-plugin/scripts/install-plugin.mjs
 ```
+
+On macOS, use `shasum -a 256 -c opencode-telemetry-plugin.tar.gz.sha256` instead of `sha256sum`.
 
 For local development from this repository, run `npm run install:opencode-plugin -- --local` instead. This installs the plugin and creates a mode-0600 config using `secrets/ingest-token.txt` and the loopback endpoint `http://localhost:4318/v1/metrics`. HTTP is permitted only for `localhost` and `127.0.0.1`; remote endpoints still require HTTPS.
 
@@ -172,16 +192,50 @@ The dashboard schema update uses new metric names and labels. Previously stored 
 Use OpenCode to complete an assistant request, then check the Collector logs:
 
 ```sh
-docker compose logs --since=5m otel-collector
+sudo docker compose logs --since=5m otel-collector
 ```
 
-Sign into Grafana using the configured admin credentials and inspect the provisioned OpenCode dashboard. Metrics may take a short interval to export and appear. If no data arrives, confirm DNS and TLS, the exact `/v1/metrics` path, matching tokens, and that the proxy forwards the authorization header.
+Sign into Grafana using the configured admin credentials. The provisioned dashboard is in **Dashboards > Browse > OpenCode**, named **OpenCode model consumption**. The dashboard appears even before metrics arrive; its panels remain empty until the plugin is installed and sends data. If no data arrives, confirm DNS and TLS, the exact `/v1/metrics` path, matching tokens, and that the proxy forwards the authorization header.
+
+## NAS Troubleshooting
+
+### Docker permission denied
+
+Prefix `docker` and `docker compose` commands with `sudo` when the NAS account cannot access `/var/run/docker.sock`. Do not change the socket to mode `666`.
+
+The `otel-wal-init` container is a one-shot volume-permissions initializer. Its `Exited` status after a successful run is expected; check that `otel-collector`, `victoria-metrics`, and `grafana` are running.
+
+### Grafana dashboard missing
+
+Check the Grafana or Collector logs for `permission denied` while reading a mounted configuration file. The bind-mounted files must be readable by the container user. From the deployment directory, run:
+
+```sh
+sudo chmod -R a+rX grafana/provisioning grafana/dashboards otel
+sudo docker compose -f compose.yaml -f compose.npm.yaml restart grafana
+sudo docker compose -f compose.yaml -f compose.npm.yaml restart otel-collector
+```
+
+If NAS ACLs override Unix mode bits, grant read/traverse permissions to these non-secret configuration directories using the NAS permission manager. Do not loosen permissions on `.env` or `secrets/`.
+
+### NPM returns 502 or cannot resolve an upstream
+
+Check that the NPM container and the relevant telemetry container are both attached to the same user-defined `npm_proxy` network. Verify that the NPM upstream is `grafana:3000` or `otel-collector:4318`, not the NAS IP. A log such as `grafana could not be resolved` means NPM's Docker DNS cannot resolve the service name; after connecting NPM to the shared network, restart the NPM container to refresh its DNS. A temporary network test for Grafana is:
+
+```sh
+sudo docker run --rm --network npm_proxy busybox:1.37.0 wget -qO- http://grafana:3000/api/health
+```
+
+Grafana should return JSON with `"database":"ok"`. If this test succeeds but NPM still returns 502, check NPM's proxy-host error log and confirm NPM itself has been restarted since it joined `npm_proxy`.
+
+### DNS resolves but the hostname does not load
+
+Use `nslookup <hostname> 1.1.1.1` to check public DNS. If it resolves but HTTPS fails, test the origin route, router port forwarding, NPM host-port mappings, and the NPM proxy-host log. A direct NAS address such as `http://192.168.1.41:3000` is not a valid Grafana URL for this stack because that port is intentionally bound to loopback. Browse through the configured HTTPS hostname instead.
 
 ## Updates and Backups
 
 - Back up the deployment directory, including `.env` and `secrets/`, using storage protected as carefully as the credentials themselves.
 - Back up the `victoria-metrics-data` and `grafana-data` Docker volumes. The Collector WAL volume is a temporary delivery buffer, but may also be included in a complete backup.
 - Keep the deployment bundle version with your backup so the configuration and images can be restored together.
-- To upgrade, review release notes and image versions, update the deployment files as needed, then run `docker compose pull` and `docker compose up -d`.
-- `docker compose down` preserves named volumes. Do not add `-v` when stopping the stack unless you intend to delete stored metrics and Grafana state.
+- To upgrade, review release notes and image versions, update the deployment files as needed, then pull and recreate using the same Compose files used for deployment. For an NPM deployment, use `sudo docker compose -f compose.yaml -f compose.npm.yaml pull` followed by `sudo docker compose -f compose.yaml -f compose.npm.yaml up -d`.
+- `sudo docker compose down` preserves named volumes. Do not add `-v` when stopping the stack unless you intend to delete stored metrics and Grafana state.
 - The deployment is a single node and has no high availability. Recovery depends on tested backups.
