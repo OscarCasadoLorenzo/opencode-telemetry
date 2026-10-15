@@ -1,0 +1,23 @@
+name: Package deployment bundle
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm run package:deploy && npm run package:plugin
+      - name: Upload deployment bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$RELEASE_TAG" dist/opencode-telemetry-deploy.tar.gz dist/opencode-telemetry-deploy.tar.gz.sha256 dist/opencode-telemetry-plugin.tar.gz dist/opencode-telemetry-plugin.tar.gz.sha256

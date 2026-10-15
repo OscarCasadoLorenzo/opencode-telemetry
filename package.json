@@ -7,7 +7,9 @@
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "install:opencode-plugin": "node scripts/install-plugin.mjs"
+    "install:opencode-plugin": "node scripts/install-plugin.mjs",
+    "package:deploy": "node scripts/package-deploy.mjs",
+    "package:plugin": "node scripts/package-plugin.mjs"
   },
   "dependencies": {
     "@opentelemetry/api": "^1.9.1",
