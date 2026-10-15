@@ -1,0 +1,79 @@
+services:
+  victoria-metrics:
+    image: ${VICTORIA_METRICS_IMAGE:?Set VICTORIA_METRICS_IMAGE in .env}
+    command:
+      - -storageDataPath=/victoria-metrics-data
+      - -retentionPeriod=${VM_RETENTION_PERIOD:-365d}
+      - -httpListenAddr=:8428
+      - -loggerFormat=json
+    volumes:
+      - victoria-metrics-data:/victoria-metrics-data
+    networks: [telemetry]
+    restart: unless-stopped
+    mem_limit: 1g
+    security_opt: [no-new-privileges:true]
+
+  otel-wal-init:
+    image: busybox:1.37.0
+    user: "0:0"
+    command: [sh, -c, "mkdir -p /var/lib/otelcol/prometheus-remote-write && chown 10001:10001 /var/lib/otelcol/prometheus-remote-write"]
+    volumes:
+      - otel-wal:/var/lib/otelcol
+    restart: "no"
+
+  otel-collector:
+    image: ${OTEL_COLLECTOR_IMAGE:?Set OTEL_COLLECTOR_IMAGE in .env}
+    command: [--config=/etc/otelcol-contrib/config.yaml]
+    volumes:
+      - ./otel/collector.yaml:/etc/otelcol-contrib/config.yaml:ro
+      - otel-wal:/var/lib/otelcol
+    secrets: [ingest_token]
+    expose: [4318]
+    networks: [telemetry, npm_proxy]
+    depends_on:
+      victoria-metrics:
+        condition: service_started
+      otel-wal-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    mem_limit: 256m
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+
+  grafana:
+    image: ${GRAFANA_IMAGE:?Set GRAFANA_IMAGE in .env}
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GF_SECURITY_ADMIN_USER:?Set GF_SECURITY_ADMIN_USER in .env}
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD:?Set GF_SECURITY_ADMIN_PASSWORD in .env}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_SECURITY_COOKIE_SECURE: "true"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    expose: [3000]
+    networks: [telemetry, npm_proxy]
+    depends_on: [victoria-metrics]
+    restart: unless-stopped
+    mem_limit: 512m
+    security_opt: [no-new-privileges:true]
+
+networks:
+  telemetry:
+    internal: true
+  npm_proxy:
+    external: true
+    name: ${NPM_PROXY_NETWORK:?Set NPM_PROXY_NETWORK to the existing NPM network}
+
+volumes:
+  victoria-metrics-data:
+  grafana-data:
+  otel-wal:
+
+secrets:
+  ingest_token:
+    file: ./secrets/ingest-token.txt

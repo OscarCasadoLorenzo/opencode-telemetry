@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: OpenCode
+    orgId: 1
+    folder: OpenCode
+    type: file
+    disableDeletion: true
+    editable: true
+    options:
+      path: /var/lib/grafana/dashboards

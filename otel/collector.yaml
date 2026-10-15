@@ -1,0 +1,52 @@
+extensions:
+  bearertokenauth/ingest:
+    filename: /run/secrets/ingest_token
+    wait_for_token_file: true
+    retry_on_failure:
+      enabled: true
+      max_retries: 10
+      interval: 1s
+
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+        auth:
+          authenticator: bearertokenauth/ingest
+
+processors:
+  memory_limiter:
+    check_interval: 5s
+    limit_mib: 192
+    spike_limit_mib: 48
+  batch:
+    timeout: 5s
+    send_batch_size: 512
+
+exporters:
+  prometheus_remote_write:
+    http:
+      endpoint: http://victoria-metrics:8428/api/v1/write
+      tls:
+        insecure: true
+    remote_write_queue:
+      enabled: true
+      queue_size: 1000
+      num_consumers: 1
+    resource_constant_labels:
+      included: [service.name]
+    target_info:
+      enabled: false
+    wal:
+      directory: /var/lib/otelcol/prometheus-remote-write
+      buffer_size: 300
+      truncate_frequency: 1m
+
+service:
+  extensions: [bearertokenauth/ingest]
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [prometheus_remote_write]
