@@ -112,7 +112,7 @@ export const OpenCodeTelemetry: Plugin = async ({ client }) => {
       },
     ],
   })
-  const meter = provider.getMeter("opencode-telemetry", "0.1.0")
+  const meter = provider.getMeter("opencode-telemetry", "0.2.0")
   const recorder = createEventRecorder(
     {
       requests: meter.createCounter("opencode.request.count", {

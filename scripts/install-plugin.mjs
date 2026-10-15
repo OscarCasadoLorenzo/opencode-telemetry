@@ -9,6 +9,7 @@ const configDir = process.env.OPENCODE_CONFIG_DIR ?? join(configHome, "opencode"
 const pluginDir = join(configDir, "plugins")
 const pluginFiles = ["opencode-telemetry.ts", "metrics.ts"]
 const localMode = process.argv.includes("--local")
+const updateMode = process.argv.includes("--update")
 const localConfigPath = join(configDir, "opencode-telemetry.json")
 const dependencies = {
   "@opentelemetry/api": "^1.9.1",
@@ -19,21 +20,28 @@ const dependencies = {
 
 let localConfig
 if (localMode) {
+  let configExists = false
   try {
     await readFile(localConfigPath)
-    throw new Error(`${localConfigPath} already exists; move it aside before installing`)
+    configExists = true
   } catch (error) {
     if (error.code !== "ENOENT") throw error
   }
 
-  const token = (await readFile(join(projectRoot, "secrets", "ingest-token.txt"), "utf8")).trim()
-  if (token.length < 32) throw new Error("secrets/ingest-token.txt must contain at least 32 characters")
-  localConfig = {
-    endpoint: "http://localhost:4318/v1/metrics",
-    token,
-    team_name: "personal",
-    user: "local-user",
-    source: "local-machine",
+  if (configExists && !updateMode) {
+    throw new Error(`${localConfigPath} already exists; use --update to preserve it while updating the plugin`)
+  }
+
+  if (!configExists) {
+    const token = (await readFile(join(projectRoot, "secrets", "ingest-token.txt"), "utf8")).trim()
+    if (token.length < 32) throw new Error("secrets/ingest-token.txt must contain at least 32 characters")
+    localConfig = {
+      endpoint: "http://localhost:4318/v1/metrics",
+      token,
+      team_name: "personal",
+      user: "local-user",
+      source: "local-machine",
+    }
   }
 }
 
@@ -43,7 +51,9 @@ for (const file of pluginFiles) {
   const destination = join(pluginDir, file)
   try {
     await readFile(destination)
-    throw new Error(`${destination} already exists; move it aside before installing`)
+    if (!updateMode) {
+      throw new Error(`${destination} already exists; use --update to replace installed plugin files`)
+    }
   } catch (error) {
     if (error.code !== "ENOENT") throw error
   }
@@ -77,10 +87,12 @@ if (localConfig) {
   await writeFile(localConfigPath, `${JSON.stringify(localConfig, null, 2)}\n`, { mode: 0o600, flag: "wx" })
 }
 
-console.log(`Installed plugin files in ${pluginDir}`)
+console.log(`${updateMode ? "Updated" : "Installed"} plugin files in ${pluginDir}`)
 console.log(`Added OpenTelemetry dependencies to ${manifestPath}`)
 if (localConfig) {
   console.log(`Created localhost telemetry config at ${localConfigPath}`)
+} else if (localMode && updateMode) {
+  console.log(`Preserved existing telemetry config at ${localConfigPath}`)
 } else {
   console.log(`Copy opencode-telemetry.example.json to opencode-telemetry.json and set endpoint/token.`)
 }

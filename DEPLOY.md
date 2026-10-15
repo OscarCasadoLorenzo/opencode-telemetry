@@ -140,6 +140,8 @@ node opencode-telemetry-plugin/scripts/install-plugin.mjs
 
 For local development from this repository, run `npm run install:opencode-plugin -- --local` instead. This installs the plugin and creates a mode-0600 config using `secrets/ingest-token.txt` and the loopback endpoint `http://localhost:4318/v1/metrics`. HTTP is permitted only for `localhost` and `127.0.0.1`; remote endpoints still require HTTPS.
 
+To update an existing plugin installation from a newer release bundle, run `node opencode-telemetry-plugin/scripts/install-plugin.mjs --update` from the extracted bundle. This replaces the plugin files but preserves the existing config and ingestion token. For local development, use `npm run install:opencode-plugin -- --local --update`.
+
 The installer places the plugin in the OpenCode configuration directory and creates `opencode-telemetry.example.json` there. With the default config directory, copy and protect the file with:
 
 ```sh
@@ -162,6 +164,8 @@ Edit `opencode-telemetry.json` with the following settings:
 Use the real HTTPS metrics hostname. The endpoint path must be exactly `/v1/metrics`; `user` and `source` must be non-empty labels. `team_name` is optional and defaults to `personal`. The dashboard maps `user` to `user_name` and the assistant message mode (`plan`, `build`, or another configured mode) to `agent`. Do not commit this file or share its token. Restart OpenCode after configuring the plugin. The installer and plugin support `OPENCODE_CONFIG_DIR` and `XDG_CONFIG_HOME` if your OpenCode config directory is nonstandard.
 
 The dashboard includes per-session views, so the plugin sends raw `session_id` values as metric labels on request, token, cost, session, and error metrics. This enables session filtering but increases time-series cardinality and exposes activity-level identifiers to anyone with metrics or Grafana access. The plugin bounds its in-process attribute and deduplication caches at 10,000 entries per metric stream; higher session volumes can exceed its cardinality limit. Keep Grafana protected and review VictoriaMetrics retention and resource limits for your usage volume. The cost panel displays the `cost` value reported by OpenCode as USD; no independent currency conversion is performed.
+
+The dashboard schema update uses new metric names and labels. Previously stored series remain in VictoriaMetrics under their old names; they are not renamed or backfilled. After updating the plugin and restarting OpenCode, the new dashboard panels populate as new requests are completed and exported.
 
 ## 6. Verify Ingestion
 
