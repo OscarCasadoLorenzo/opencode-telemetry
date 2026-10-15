@@ -1,6 +1,10 @@
 import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-http"
 import { resourceFromAttributes } from "@opentelemetry/resources"
-import { MeterProvider, PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics"
+import {
+  AggregationType,
+  MeterProvider,
+  PeriodicExportingMetricReader,
+} from "@opentelemetry/sdk-metrics"
 import type { Plugin } from "@opencode-ai/plugin"
 import { readFile } from "node:fs/promises"
 import { homedir } from "node:os"
@@ -10,6 +14,7 @@ import { createEventRecorder } from "./metrics.ts"
 type PluginConfig = {
   endpoint: string
   token: string
+  team_name?: string
   user: string
   source: string
 }
@@ -34,7 +39,8 @@ function configPath() {
   }
 
   const configHome = process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config")
-  return join(configHome, "opencode", "opencode-telemetry.json")
+  const configDir = process.env.OPENCODE_CONFIG_DIR ?? join(configHome, "opencode")
+  return join(configDir, "opencode-telemetry.json")
 }
 
 async function loadConfig(): Promise<PluginConfig> {
@@ -49,7 +55,14 @@ async function loadConfig(): Promise<PluginConfig> {
     throw new Error("user and source must be non-empty")
   }
 
-  return { ...config, endpoint: validatedEndpoint, token: config.token.trim() }
+  return {
+    ...config,
+    endpoint: validatedEndpoint,
+    token: config.token.trim(),
+    team_name: typeof config.team_name === "string" && config.team_name.trim()
+      ? config.team_name.trim()
+      : "personal",
+  }
 }
 
 export const OpenCodeTelemetry: Plugin = async ({ client }) => {
@@ -81,32 +94,52 @@ export const OpenCodeTelemetry: Plugin = async ({ client }) => {
   const provider = new MeterProvider({
     resource: resourceFromAttributes({ "service.name": "opencode" }),
     readers: [reader],
+    views: [
+      ...[
+        "opencode.request.count",
+        "opencode.token.usage.tokens",
+        "opencode.cost.usage.USD",
+        "opencode.session.count",
+        "opencode.error.count",
+      ].map((instrumentName) => ({ instrumentName, aggregationCardinalityLimit: 10000 })),
+      {
+        instrumentName: "opencode.response.latency",
+        aggregationCardinalityLimit: 10000,
+        aggregation: {
+          type: AggregationType.EXPLICIT_BUCKET_HISTOGRAM,
+          options: { boundaries: [100, 250, 500, 1000, 2500, 5000, 10000] },
+        },
+      },
+    ],
   })
   const meter = provider.getMeter("opencode-telemetry", "0.1.0")
   const recorder = createEventRecorder(
     {
-      requests: meter.createCounter("opencode.ai.requests", {
+      requests: meter.createCounter("opencode.request.count", {
         description: "Completed assistant messages",
       }),
-      tokens: meter.createCounter("opencode.tokens", {
+      tokens: meter.createCounter("opencode.token.usage.tokens", {
         description: "Tokens reported for completed assistant messages",
         unit: "1",
       }),
-      reportedCost: meter.createCounter("opencode.reported.cost", {
-        description: "Cost value reported by OpenCode; currency is not normalized",
+      cost: meter.createCounter("opencode.cost.usage.USD", {
+        description: "Cost in USD reported by OpenCode for completed assistant messages",
       }),
-      requestDuration: meter.createHistogram("opencode.request.duration", {
-        description: "Duration of completed assistant messages",
-        unit: "s",
+      responseLatency: meter.createHistogram("opencode.response.latency", {
+        description: "Completed assistant message latency",
+        unit: "ms",
       }),
-      sessions: meter.createCounter("opencode.sessions", {
+      sessions: meter.createCounter("opencode.session.count", {
         description: "OpenCode sessions created",
       }),
-      errors: meter.createCounter("opencode.errors", {
-        description: "OpenCode session errors",
+      errors: meter.createCounter("opencode.error.count", {
+        description: "Model, tool, and session errors observed by OpenCode",
       }),
     },
-    { source: config.source, user: config.user },
+    {
+      teamName: config.team_name ?? "personal",
+      userName: config.user,
+    },
   )
 
   await client.app.log({
@@ -114,7 +147,7 @@ export const OpenCodeTelemetry: Plugin = async ({ client }) => {
       service: "opencode-telemetry",
       level: "info",
       message: "Telemetry plugin initialized",
-      extra: { source: config.source },
+      extra: { source: config.source, team_name: config.team_name ?? "personal" },
     },
   }).catch(() => undefined)
 

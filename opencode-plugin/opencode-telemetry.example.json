@@ -1,6 +1,7 @@
 {
   "endpoint": "https://metrics-ingest.example.net/v1/metrics",
   "token": "replace-with-the-same-random-token-configured-on-the-NAS",
+  "team_name": "personal",
   "user": "personal-user",
   "source": "personal-computer"
 }

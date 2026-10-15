@@ -31,6 +31,7 @@ if (localMode) {
   localConfig = {
     endpoint: "http://localhost:4318/v1/metrics",
     token,
+    team_name: "personal",
     user: "local-user",
     source: "local-machine",
   }
