@@ -8,11 +8,32 @@ const configHome = process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config")
 const configDir = process.env.OPENCODE_CONFIG_DIR ?? join(configHome, "opencode")
 const pluginDir = join(configDir, "plugins")
 const pluginFiles = ["opencode-telemetry.ts", "metrics.ts"]
+const localMode = process.argv.includes("--local")
+const localConfigPath = join(configDir, "opencode-telemetry.json")
 const dependencies = {
   "@opentelemetry/api": "^1.9.1",
   "@opentelemetry/exporter-metrics-otlp-http": "^0.223.0",
   "@opentelemetry/resources": "^2.12.0",
   "@opentelemetry/sdk-metrics": "^2.12.0",
+}
+
+let localConfig
+if (localMode) {
+  try {
+    await readFile(localConfigPath)
+    throw new Error(`${localConfigPath} already exists; move it aside before installing`)
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error
+  }
+
+  const token = (await readFile(join(projectRoot, "secrets", "ingest-token.txt"), "utf8")).trim()
+  if (token.length < 32) throw new Error("secrets/ingest-token.txt must contain at least 32 characters")
+  localConfig = {
+    endpoint: "http://localhost:4318/v1/metrics",
+    token,
+    user: "local-user",
+    source: "local-machine",
+  }
 }
 
 await mkdir(pluginDir, { recursive: true })
@@ -51,7 +72,15 @@ try {
   await copyFile(exampleConfig, configExampleDestination)
 }
 
+if (localConfig) {
+  await writeFile(localConfigPath, `${JSON.stringify(localConfig, null, 2)}\n`, { mode: 0o600, flag: "wx" })
+}
+
 console.log(`Installed plugin files in ${pluginDir}`)
 console.log(`Added OpenTelemetry dependencies to ${manifestPath}`)
-console.log(`Copy opencode-telemetry.example.json to opencode-telemetry.json and set endpoint/token.`)
+if (localConfig) {
+  console.log(`Created localhost telemetry config at ${localConfigPath}`)
+} else {
+  console.log(`Copy opencode-telemetry.example.json to opencode-telemetry.json and set endpoint/token.`)
+}
 console.log("Restart OpenCode to load the plugin and install its dependencies.")

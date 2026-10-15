@@ -14,6 +14,20 @@ type PluginConfig = {
   source: string
 }
 
+export function validateEndpoint(endpoint: URL): string {
+  const isLocalHttp = endpoint.protocol === "http:" &&
+    (endpoint.hostname === "localhost" || endpoint.hostname === "127.0.0.1")
+
+  if (endpoint.protocol !== "https:" && !isLocalHttp) {
+    throw new Error("endpoint must use HTTPS, except HTTP is allowed for localhost testing")
+  }
+  if (endpoint.pathname !== "/v1/metrics" || endpoint.username || endpoint.password || endpoint.search || endpoint.hash) {
+    throw new Error("endpoint must be the OTLP /v1/metrics URL without URL credentials or query parameters")
+  }
+
+  return endpoint.toString()
+}
+
 function configPath() {
   if (process.env.OPENCODE_TELEMETRY_CONFIG) {
     return process.env.OPENCODE_TELEMETRY_CONFIG
@@ -27,12 +41,7 @@ async function loadConfig(): Promise<PluginConfig> {
   const config = JSON.parse(await readFile(configPath(), "utf8")) as PluginConfig
   const endpoint = new URL(config.endpoint)
 
-  if (endpoint.protocol !== "https:") {
-    throw new Error("endpoint must use HTTPS")
-  }
-  if (endpoint.pathname !== "/v1/metrics" || endpoint.username || endpoint.password || endpoint.search || endpoint.hash) {
-    throw new Error("endpoint must be the HTTPS OTLP /v1/metrics URL without URL credentials or query parameters")
-  }
+  const validatedEndpoint = validateEndpoint(endpoint)
   if (typeof config.token !== "string" || config.token.trim().length < 32) {
     throw new Error("token must contain at least 32 characters")
   }
@@ -40,7 +49,7 @@ async function loadConfig(): Promise<PluginConfig> {
     throw new Error("user and source must be non-empty")
   }
 
-  return { ...config, endpoint: endpoint.toString(), token: config.token.trim() }
+  return { ...config, endpoint: validatedEndpoint, token: config.token.trim() }
 }
 
 export const OpenCodeTelemetry: Plugin = async ({ client }) => {

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
 import { createEventRecorder, type TelemetryInstruments } from "../opencode-plugin/metrics.ts"
+import { validateEndpoint } from "../opencode-plugin/opencode-telemetry.ts"
 import type { AssistantMessage, Event } from "@opencode-ai/sdk"
 
 function instruments(): TelemetryInstruments {
@@ -29,6 +30,20 @@ function assistantMessage(overrides: Partial<AssistantMessage> = {}): AssistantM
     ...overrides,
   }
 }
+
+describe("telemetry endpoint validation", () => {
+  it("allows HTTPS endpoints and localhost HTTP testing", () => {
+    expect(validateEndpoint(new URL("https://metrics.example.net/v1/metrics")))
+      .toBe("https://metrics.example.net/v1/metrics")
+    expect(validateEndpoint(new URL("http://localhost:4318/v1/metrics")))
+      .toBe("http://localhost:4318/v1/metrics")
+  })
+
+  it("rejects non-local HTTP and malformed OTLP endpoints", () => {
+    expect(() => validateEndpoint(new URL("http://metrics.example.net/v1/metrics"))).toThrow(/HTTPS/)
+    expect(() => validateEndpoint(new URL("http://localhost:4318/other"))).toThrow(/\/v1\/metrics/)
+  })
+})
 
 describe("OpenCode event recorder", () => {
   it("records completed assistant usage once, without project or session labels", () => {
