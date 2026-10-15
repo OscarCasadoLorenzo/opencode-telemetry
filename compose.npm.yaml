@@ -1,0 +1,11 @@
+services:
+  otel-collector:
+    networks: [npm_proxy]
+
+  grafana:
+    networks: [npm_proxy]
+
+networks:
+  npm_proxy:
+    external: true
+    name: ${NPM_PROXY_NETWORK:?Set NPM_PROXY_NETWORK to the existing NPM network}

@@ -66,3 +66,7 @@ The telemetry components and reverse proxy are open source. Cloudflare may remai
 3. Install and configure the plugin in OpenCode on the personal computer.
 4. Use OpenCode as usual and explore the data in Grafana to create or adapt dashboards.
 5. Include the configuration and persistent data in the NAS backup plan.
+
+## Deployment
+
+For installation on a NAS or server using Docker Compose, follow [DEPLOY.md](DEPLOY.md). The base Compose deployment does not require Nginx Proxy Manager; an optional overlay is provided for existing NPM installations.

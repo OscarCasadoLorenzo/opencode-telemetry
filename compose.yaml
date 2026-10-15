@@ -19,6 +19,7 @@ services:
     command: [sh, -c, "mkdir -p /var/lib/otelcol/prometheus-remote-write && chown 10001:10001 /var/lib/otelcol/prometheus-remote-write"]
     volumes:
       - otel-wal:/var/lib/otelcol
+    networks: [telemetry]
     restart: "no"
 
   otel-collector:
@@ -28,8 +29,9 @@ services:
       - ./otel/collector.yaml:/etc/otelcol-contrib/config.yaml:ro
       - otel-wal:/var/lib/otelcol
     secrets: [ingest_token]
-    expose: [4318]
-    networks: [telemetry, npm_proxy]
+    ports:
+      - "127.0.0.1:${OTEL_HTTP_PORT:-4318}:4318"
+    networks: [telemetry, ingress]
     depends_on:
       victoria-metrics:
         condition: service_started
@@ -50,13 +52,14 @@ services:
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
-      GF_SECURITY_COOKIE_SECURE: "true"
+      GF_SECURITY_COOKIE_SECURE: ${GF_SECURITY_COOKIE_SECURE:-true}
     volumes:
       - grafana-data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
-    expose: [3000]
-    networks: [telemetry, npm_proxy]
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
+    networks: [telemetry, ingress]
     depends_on: [victoria-metrics]
     restart: unless-stopped
     mem_limit: 512m
@@ -65,9 +68,8 @@ services:
 networks:
   telemetry:
     internal: true
-  npm_proxy:
-    external: true
-    name: ${NPM_PROXY_NETWORK:?Set NPM_PROXY_NETWORK to the existing NPM network}
+  ingress:
+    driver: bridge
 
 volumes:
   victoria-metrics-data:
